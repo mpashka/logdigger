@@ -1,0 +1,81 @@
+<project name="logView" default="rebuild" basedir=".">
+
+    <property name="version" value="2.1"/>
+    <property name="revision" value="0"/>
+
+    <property name="src.dir" value="${basedir}/src"/>
+    <property name="classes.dir" value="${basedir}/classes"/>
+    <property name="dist.dir" value="${basedir}/dist"/>
+    <property name="lib.dir" value="${basedir}/lib"/>
+    <property name="jar.file" value="${dist.dir}/lib/logView.jar"/>
+
+    <path id="class.path">
+        <fileset dir="${lib.dir}">
+            <include name="*.jar"/>
+        </fileset>
+    </path>
+
+    <target name="clean">
+        <delete dir="${classes.dir}" failonerror="false"/>
+        <delete dir="${dist.dir}" failonerror="false"/>
+    </target>
+
+    <target name="compile">
+        <mkdir dir="${classes.dir}"/>
+        <javac srcdir="${src.dir}"
+               destdir="${classes.dir}"
+               classpathref="class.path"
+               debug="true"
+               optimize="true">
+        </javac>
+        <copy todir="${classes.dir}" preservelastmodified="true">
+            <fileset dir="${src.dir}">
+                <include name="**/*.properties"/>
+                <include name="**/*.xml"/>
+                <include name="**/*.xsd"/>
+            </fileset>
+        </copy>
+    </target>
+
+    <target name="build" description="build all" depends="compile">
+        <mkdir dir="${dist.dir}/lib"/>
+        <mkdir dir="${dist.dir}/xml"/>
+        <taskdef name="xpath" classname="com.iv.ant.XPathProperty" classpathref="class.path"/>
+        <xpath
+                property="revision"
+                file="${basedir}/.svn/entries"
+                expression="//child::svn:entry[attribute::kind='dir'][attribute::name='']/attribute::committed-rev"
+                prefix="svn"
+                namespace="svn:"
+                />
+        <tstamp>
+            <format property="today" pattern="yyyy-MM-dd HH:mm:ss Z"/>
+        </tstamp>
+        <jar destfile="${jar.file}" index="true" duplicate="fail">
+            <zipfileset dir="${classes.dir}" prefix=""/>
+            <manifest>
+                <attribute name="Implementation-Vendor" value="i-Vortex, Inc."/>
+                <attribute name="Implementation-Vendor-Id" value="com.iv"/>
+                <attribute name="Implementation-Version" value="${version}.${revision}"/>
+                <attribute name="Built-Date" value="${today}"/>
+                <attribute name="Main-Class" value="com.iv.logView.Main"/>
+            </manifest>
+        </jar>
+        <copy todir="${dist.dir}/lib">
+            <fileset dir="${lib.dir}">
+                <exclude name="ant-xpath.jar"/>
+            </fileset>
+        </copy>
+        <copy todir="${dist.dir}/xml">
+            <fileset dir="${basedir}/xml"/>
+        </copy>
+        <copy todir="${dist.dir}">
+            <fileset dir="${src.dir}">
+                <include name="*.bat"/>
+            </fileset>
+        </copy>
+    </target>
+
+    <target name="rebuild" description="rebuild all" depends="clean,build"/>
+
+</project>
