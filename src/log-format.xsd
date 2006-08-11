@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            targetNamespace="http://www.i-vortex.com/log-format"
+            xmlns="http://www.i-vortex.com/log-format"
+            elementFormDefault="qualified"
+            attributeFormDefault="unqualified">
+
+    <xsd:element name="format" type="formatType"/>
+
+    <xsd:complexType name="formatType">
+        <xsd:sequence>
+            <xsd:element name="name" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="pattern" type="xsd:string"/>
+            <xsd:element name="column" type="columnType" maxOccurs="unbounded"/>
+            <xsd:element name="message-column" type="messageColumnType"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="columnType">
+        <xsd:sequence>
+            <xsd:element name="highlight" type="hlType" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence>
+        <xsd:attribute name="name" type="xsd:string" use="required"/>
+        <xsd:attribute name="group" type="xsd:positiveInteger" use="required"/>
+        <xsd:attribute name="indexable" type="xsd:boolean" use="optional" default="false"/>
+    </xsd:complexType>
+
+    <xsd:complexType name="messageColumnType">
+        <xsd:attribute name="name" type="xsd:string" use="optional" default="Message"/>
+        <xsd:attribute name="group" type="xsd:positiveInteger" use="required"/>
+    </xsd:complexType>
+
+    <xsd:complexType name="hlType">
+        <xsd:attribute name="value" type="xsd:string" use="required"/>
+        <xsd:attribute name="color" type="xsd:string" use="required"/>
+    </xsd:complexType>
+
+</xsd:schema>

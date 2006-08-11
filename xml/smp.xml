@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<format xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.i-vortex.com/log-format"
+        xsi:schemaLocation="http://www.i-vortex.com/log-format log-format.xsd">
+    <name>SMP</name>
+    <pattern>
+        <![CDATA[^\d{4}-\d{2}-\d{2}\s(\d{2}:\d{2}:\d{2}[\.\,]\d{3})\s(\w+)\s+([\d\w\:\._-]+)\s+:\s+(.*)$]]>
+    </pattern>
+    <column name="Time" group="1"/>
+    <column name="Level" group="2" indexable="true">
+        <highlight value="ERROR" color="0xff0000"/>
+        <highlight value="WARN" color="0x0000ff"/>
+    </column>
+    <column name="Category" group="3" indexable="true"/>
+    <message-column group="4"/>
+</format>
