@@ -13,8 +13,8 @@ public class FilteredLogReader extends LogReader {
 
     private final List<IndexRecord> filterIndex = new ArrayList<IndexRecord>();
 
-    public FilteredLogReader(File file) throws IOException {
-        super(file);
+    public FilteredLogReader(File file, ProgressListener progressListener) throws IOException {
+        super(file, progressListener);
         getIndex().addAll(super.getIndex());
     }
 
@@ -43,6 +43,7 @@ public class FilteredLogReader extends LogReader {
         }
     }
 
+    @Override
     protected List<IndexRecord> getIndex() {
         return filterIndex;
     }

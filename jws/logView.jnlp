@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.5+" codebase="http://pshmarev.googlepages.com/">
+    <information>
+        <title>LogViewer</title>
+        <vendor>LogViewer Development Team</vendor>
+        <homepage href="/"/>
+        <icon href="logView.png"/>
+        <offline-allowed/>
+        <shortcut online="true">
+          <desktop/>
+          <menu submenu="LogViewer"/>
+        </shortcut>
+    </information>
+    <security>
+        <all-permissions/>
+    </security>
+    <update check="timeout" policy="always"/>
+    <resources>
+        <j2se version="1.5+" java-vm-args="-Xmx128m"/>
+        <jar href="logView.jar"/>
+        <jar href="TableLayout.jar"/>
+        <jar href="looks-1.2.1.jar"/>
+    </resources>
+    <application-desc main-class="com.iv.logView.Main"/>
+</jnlp>

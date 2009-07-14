@@ -1,18 +1,19 @@
 package com.iv.logView.model;
 
+import java.util.regex.Pattern;
 import javax.swing.table.DefaultTableColumnModel;
 import javax.swing.table.TableColumn;
 
 public class LogTableColumnModel extends DefaultTableColumnModel {
 
-    private final String pattern;
+    private final Pattern pattern;
     private LogColumnModel messageColumn;
 
-    public LogTableColumnModel(String pattern) {
+    public LogTableColumnModel(Pattern pattern) {
         this.pattern = pattern;
     }
 
-    public String getPattern() {
+    public Pattern getPattern() {
         return pattern;
     }
 
@@ -26,6 +27,5 @@ public class LogTableColumnModel extends DefaultTableColumnModel {
     public LogColumnModel getMessageColumn() {
         return messageColumn;
     }
-
 
 }

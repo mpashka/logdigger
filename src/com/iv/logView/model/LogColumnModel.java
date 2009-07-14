@@ -37,10 +37,12 @@ public class LogColumnModel extends TableColumn {
         return indexable;
     }
 
+    @Override
     public int hashCode() {
         return getHeaderValue().hashCode();
     }
 
+    @Override
     public boolean equals(Object obj) {
         return getHeaderValue().equals(obj);
     }

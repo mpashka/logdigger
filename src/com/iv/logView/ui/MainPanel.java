@@ -1,132 +1,146 @@
 package com.iv.logView.ui;
 
+import com.iv.logView.Main;
+import com.iv.logView.Prefs;
 import com.iv.logView.io.FilteredLogReader;
 import com.iv.logView.io.RowId;
+import com.iv.logView.logging.Log;
+import com.iv.logView.logging.LogFactory;
 import com.iv.logView.model.FilterModel;
 import com.iv.logView.model.FindModel;
 import com.iv.logView.model.LogColumnModel;
 
-import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
-import javax.swing.table.AbstractTableModel;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.TableCellRenderer;
-import javax.swing.text.Style;
-import javax.swing.text.StyleConstants;
-import java.awt.*;
-import java.awt.datatransfer.StringSelection;
-import java.awt.datatransfer.Transferable;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GraphicsEnvironment;
+import java.awt.Insets;
+import java.awt.Point;
 import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowStateListener;
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.prefs.Preferences;
+import java.util.List;
+import javax.swing.AbstractAction;
+import javax.swing.JFrame;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JTextArea;
+import javax.swing.KeyStroke;
+import javax.swing.ListSelectionModel;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter;
 
 public class MainPanel extends JFrame {
 
-    private static final String SYNC_VALUE_KEY = "syncValue";
-    private static final String SYNC_TIME_KEY = "syncTime";
-    private static final String P_STATE = "state";
-    private static final String P_WIDTH = "width";
-    private static final String P_HEIGHT = "height";
-    private static final String P_X = "x";
-    private static final String P_Y = "y";
+    private static final Log log = LogFactory.getLogger(MainPanel.class);
+    private static final Highlighter.HighlightPainter HL_PAINTER = new DefaultHighlighter.DefaultHighlightPainter(Color.GREEN);
+    private static final long serialVersionUID = -9071462322047687520L;
 
-    private final FilteredLogReader logReader;
-    private final java.util.List<RowId> bookmarks = new ArrayList<RowId>();
-    private JTextPane text;
-    private FindContext findContext = null;
-    private JTable table;
+    private FilteredLogReader logReader;
+    private final List<RowId> bookmarks = new ArrayList<RowId>();
+    private JTextArea text;
+    private FindContext findContext;
+    private JSplitPane panel;
+    private JLogTable table;
     private FilterModel filterModel;
-    private Style selected;
+    private ResetBookmarksAction resetBookmarks;
     private NextBookmarkAction nextBookmark;
     private PreviousBookmarkAction prevBookmark;
-    private JStatusBar status;
+    private JStatusBar statusBar;
     private final SyncRunner syncRunner;
+    private JMenu fileHistoryMenu;
 
     public MainPanel(FilteredLogReader logReader) {
         this.logReader = logReader;
-        init();
-
+        initFrame();
+        initMenu();
+        initPanel();
+        addRecentFile(logReader.getFile().getAbsolutePath());
         syncRunner = new SyncRunner();
         new Thread(syncRunner).start();
-
     }
 
     private void syncForTime(String time) {
         LogColumnModel timeCol = ((LogColumnModel) table.getColumn("Time"));
         if (timeCol != null) {
             int row = logReader.findNearestRow(timeCol, time);
-            scrollToRow(row);
+            table.scrollToRow(row);
         }
     }
 
     private void initMenu() {
         final JMenuBar menuBar = new JMenuBar();
-        JMenu menu;
-        JMenuItem menuItem;
 
-        menu = new JMenu("File");
-        menu.setMnemonic(KeyEvent.VK_F);
-        menuBar.add(menu);
+        final JMenu fileMenu = new JMenu("File");
+        fileMenu.setMnemonic('F');
+        menuBar.add(fileMenu);
 
-        menuItem = new JMenuItem(new FileReloadAction());
-        menu.add(menuItem);
+        fileMenu.add(new JMenuItem(new FileOpenAction()));
+        fileMenu.add(new JMenuItem(new FileReloadAction()));
 
-        menu.addSeparator();
+        fileHistoryMenu = new JMenu("Open Recent File");
+        fileHistoryMenu.setMnemonic('F');
+        fileMenu.add(fileHistoryMenu);
+        fileMenu.addSeparator();
+        fileMenu.add(new JMenuItem(new ExitAction()));
 
-        menuItem = new JMenuItem(new ExitAction());
-        menu.add(menuItem);
+        final JMenu searchMenu = new JMenu("Search");
+        searchMenu.setMnemonic(KeyEvent.VK_S);
+        menuBar.add(searchMenu);
 
-        menu = new JMenu("Search");
-        menu.setMnemonic(KeyEvent.VK_S);
-        menuBar.add(menu);
+        searchMenu.add(new JMenuItem(new FindAction()));
+        searchMenu.add(new JMenuItem(new FindNextAction()));
+        searchMenu.add(new JMenuItem(new FindPreviousAction()));
+        searchMenu.addSeparator();
+        searchMenu.add(new JMenuItem(new SetFilterAction()));
+        searchMenu.addSeparator();
+        searchMenu.add(new JMenuItem(new ToggleBookmarkAction()));
 
-        menuItem = new JMenuItem(new FindAction());
-        menu.add(menuItem);
-
-        menuItem = new JMenuItem(new FindNextAction());
-        menu.add(menuItem);
-
-        menuItem = new JMenuItem(new FindPreviousAction());
-        menu.add(menuItem);
-
-        menu.addSeparator();
-
-        menuItem = new JMenuItem(new SetFilterAction());
-        menu.add(menuItem);
-
-        menu.addSeparator();
-
-        menuItem = new JMenuItem(new ToggleBookmarkAction());
-        menu.add(menuItem);
+        resetBookmarks = new ResetBookmarksAction();
+        resetBookmarks.setEnabled(false);
+        searchMenu.add(new JMenuItem(resetBookmarks));
 
         nextBookmark = new NextBookmarkAction();
-        menuItem = new JMenuItem(nextBookmark);
-        menu.add(menuItem);
+        searchMenu.add(new JMenuItem(nextBookmark));
 
         prevBookmark = new PreviousBookmarkAction();
-        menuItem = new JMenuItem(prevBookmark);
-        menu.add(menuItem);
+        searchMenu.add(new JMenuItem(prevBookmark));
 
-        menu.addSeparator();
+        searchMenu.addSeparator();
 
-        menuItem = new JMenuItem(new SyncAction());
-        menu.add(menuItem);
+        searchMenu.add(new JMenuItem(new SyncAction()));
+
+        final JMenu helpMenu = new JMenu("Help");
+        helpMenu.setMnemonic(KeyEvent.VK_H);
+        menuBar.add(helpMenu);
+
+        helpMenu.add(new JMenuItem(new AboutAction()));
 
         setJMenuBar(menuBar);
     }
 
     private void initFrame() {
-        final Preferences prefs = Preferences.userNodeForPackage(MainPanel.class);
+        setIconImage(ApplicationIcon.getImage());
         addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
                 System.exit(0);
@@ -135,36 +149,38 @@ public class MainPanel extends JFrame {
 
         addWindowStateListener(new WindowStateListener() {
             public void windowStateChanged(WindowEvent e) {
-                prefs.putInt(P_STATE, getExtendedState());
+                Prefs.getInstance().setWindowState(getExtendedState());
             }
         });
 
         addComponentListener(new ComponentAdapter() {
             public void componentResized(ComponentEvent e) {
                 if (isVisible() && getExtendedState() != MAXIMIZED_BOTH) {
-                    prefs.putInt(P_WIDTH, getWidth());
-                    prefs.putInt(P_HEIGHT, getHeight());
+                    Prefs.getInstance().setWindowSize(getSize());
                 }
             }
 
             public void componentMoved(ComponentEvent e) {
                 if (isVisible() && getExtendedState() != MAXIMIZED_BOTH) {
-                    prefs.putInt(P_X, getLocationOnScreen().x);
-                    prefs.putInt(P_Y, getLocationOnScreen().y);
+                    Prefs.getInstance().setWindowLocation(getLocationOnScreen());
                 }
             }
-
         });
 
-        setExtendedState(prefs.getInt(P_STATE, 0));
-        int w = prefs.getInt(P_WIDTH, 1200);
-        int h = prefs.getInt(P_HEIGHT, 800);
+        addFocusListener(new FocusAdapter() {
+            public void focusGained(FocusEvent e) {
+                table.requestFocus();
+            }
+        });
 
-        Dimension frameSize = new Dimension(w, h);
+        setExtendedState(Prefs.getInstance().getWindowState());
+        Dimension frameSize = Prefs.getInstance().getWindowSize();
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+
         Dimension screenSize = getToolkit().getScreenSize();
         Insets screenInsets = getToolkit().getScreenInsets(getGraphicsConfiguration());
-        w = screenSize.width - screenInsets.left - screenInsets.right;
-        h = screenSize.height - screenInsets.top - screenInsets.bottom;
+        int w = screenSize.width - screenInsets.left - screenInsets.right;
+        int h = screenSize.height - screenInsets.top - screenInsets.bottom;
         if (frameSize.height > h) {
             frameSize.height = h;
         }
@@ -173,26 +189,29 @@ public class MainPanel extends JFrame {
         }
         setSize(frameSize);
 
-        int x = prefs.getInt(P_X, Integer.MIN_VALUE);
-        int y = prefs.getInt(P_Y, Integer.MIN_VALUE);
-        if (x == Integer.MIN_VALUE || y == Integer.MIN_VALUE) {
-            x = (w - frameSize.width) / 2 + screenInsets.left;
-            y = (h - frameSize.height) / 2 + screenInsets.top;
+        Point location = Prefs.getInstance().getWindowLocation();
+        if (location.x == Integer.MIN_VALUE || location.y == Integer.MIN_VALUE) {
+            Point center = ge.getCenterPoint();
+            Dimension winSize = getSize();
+            location.x = center.x - (winSize.width / 2);
+            location.y = center.y - (winSize.height / 2);
         }
-        setLocation(x, y);
+        setLocation(location);
+
+        statusBar = new JStatusBar(logReader.getFile());
+        add(statusBar, BorderLayout.SOUTH);
     }
 
-    private void init() {
-        initFrame();
-        initMenu();
+    private void initPanel() {
+        if (panel == null) {
+            panel = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+            panel.setResizeWeight(0.5);
+            add(panel, BorderLayout.CENTER);
+        }
+        setTitle("LogViewer - " + logReader.getFile().getAbsolutePath());
+        statusBar.setFile(logReader.getFile());
 
-        status = new JStatusBar();
-        getContentPane().add(status, BorderLayout.SOUTH);
-
-        table = new JLogTable();
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
-        JScrollPane tableScroll = new JScrollPane(table);
+        table = new JLogTable(logReader, bookmarks);
         table.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
             public void valueChanged(ListSelectionEvent e) {
                 //Ignore extra messages.
@@ -202,107 +221,108 @@ public class MainPanel extends JFrame {
                 String str = null;
                 if (!lsm.isSelectionEmpty()) {
                     int selectedRow = lsm.getMinSelectionIndex();
-                    status.setPosition(selectedRow + 1, logReader.getRowCount());
+                    statusBar.setPosition(selectedRow + 1, logReader.getRowCount());
                     try {
                         int gr = logReader.getTableColumnModel().getMessageColumn().getGroup();
                         str = logReader.get(selectedRow, gr);
                     } catch (IOException e1) {
                         // ignore
-                        e1.printStackTrace();
+                        log.debug(e1);
                     }
                 }
                 text.setText(str);
+                text.getHighlighter().removeAllHighlights();
                 text.setCaretPosition(0);
             }
         });
-        table.setTransferHandler(new TableTransferHandler());
-        addComponentListener(new ComponentAdapter() {
-            public void componentShown(ComponentEvent e) {
+        table.addComponentListener(new ComponentAdapter() {
+            public void componentResized(ComponentEvent e) {
                 for (int i = 0; i < table.getColumnCount() - 1; i++) {
                     ColumnFitAdapter.fit(table, i);
                 }
-                scrollToRow(0);
-                removeComponentListener(this);
+                table.scrollToRow(0);
+                table.removeComponentListener(this);
             }
         });
 
-        text = new JTextPane();
-        text.setEditorKit(new NoWrapEditorKit());
-        text.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        text = new JTextArea();
+        text.setFont(new Font("Monospaced", Font.PLAIN, text.getFont().getSize()));
         text.setEditable(false);
-        Style def = text.getLogicalStyle();
-        StyleConstants.setFontFamily(def, "Monospaced");
-        StyleConstants.setFontSize(def, 12);
 
-        selected = text.addStyle("special", def);
-        StyleConstants.setBackground(selected, Color.GREEN);
-
-        JScrollPane textScroll = new JScrollPane(text);
-
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, tableScroll, textScroll);
-        split.setResizeWeight(0.5);
-
-        getContentPane().add(split, BorderLayout.CENTER);
+        panel.setTopComponent(new JScrollPane(table));
+        panel.setBottomComponent(new JScrollPane(text));
     }
 
-    private class LogTableModel extends AbstractTableModel {
-
-        public int getRowCount() {
-            try {
-                return logReader.getRowCount();
-            } catch (Exception e) {
-                e.printStackTrace();
-                return 0;
-            }
-        }
-
-        public int getColumnCount() {
-            return table.getColumnModel().getColumnCount();
-        }
-
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            try {
-                columnIndex = table.convertColumnIndexToModel(columnIndex);
-                int gr = ((LogColumnModel) table.getColumnModel().getColumn(columnIndex)).getGroup();
-                return logReader.get(rowIndex, gr);
-            } catch (Exception e) {
-                e.printStackTrace();
-                return "???";
+    private void highlightText() {
+        if (findContext != null) {
+            final Highlighter hl = text.getHighlighter();
+            hl.removeAllHighlights();
+            for (FindResult fr : findContext.getFindResults()) {
+                try {
+                    hl.addHighlight(fr.getPos(), fr.getPos() + fr.getLength(), HL_PAINTER);
+                } catch (BadLocationException e) {
+                    log.warning("", e);
+                }
             }
         }
     }
 
-    private void scrollToRow(int rowIndex) {
-        if (rowIndex < 0) return;
-        table.requestFocus();
-        table.getParent().validate();
-        if (table.getRowCount() > 0) {
-            rowIndex = Math.min(rowIndex, table.getRowCount() - 1);
-            table.setRowSelectionInterval(rowIndex, rowIndex);
-            Rectangle rect = table.getCellRect(rowIndex, -1, true);
-            Insets i = table.getInsets();
-            rect.x = i.left;
-            rect.width = table.getWidth() - i.left - i.right;
-            Scrolling.centerVertically(table, rect, true);
+    private void addRecentFile(String fileName) {
+        List<String> list = Prefs.getInstance().addFileHistory(fileName);
+        if (list.size() > 1) {
+            fileHistoryMenu.removeAll();
+            for (int i = 1; i < list.size(); i++) {
+                fileHistoryMenu.add(new FileReopenAction(list.get(i)));
+            }
+            fileHistoryMenu.setEnabled(true);
+        } else {
+            fileHistoryMenu.setEnabled(false);
         }
     }
 
-    private void highlightText(FindContext ctx) {
-        for (FindResult fr : ctx.getFindResults()) {
-            text.getStyledDocument().setCharacterAttributes(fr.getPos(), fr.getLength(), selected, true);
+    private void removeRecentFile(String fileName) {
+        List<String> list = Prefs.getInstance().removeFileHistory(fileName);
+        if (list.size() > 1) {
+            fileHistoryMenu.removeAll();
+            for (int i = 1; i < list.size(); i++) {
+                fileHistoryMenu.add(new FileReopenAction(list.get(i)));
+            }
+            fileHistoryMenu.setEnabled(true);
+        } else {
+            fileHistoryMenu.setEnabled(false);
         }
-        ctx.getFindResults().clear();
     }
 
     private abstract class BaseAction extends AbstractAction {
+        private static final long serialVersionUID = 7808489076570903803L;
+
+        protected BaseAction(String name) {
+            putValue(NAME, name);
+        }
+
         protected BaseAction(String name, int mnemonic, KeyStroke accelerator) {
             putValue(NAME, name);
-            putValue(MNEMONIC_KEY, mnemonic);
-            putValue(ACCELERATOR_KEY, accelerator);
+            if (mnemonic != 0) putValue(MNEMONIC_KEY, mnemonic);
+            if (accelerator != null) putValue(ACCELERATOR_KEY, accelerator);
+        }
+    }
+
+    private class AboutAction extends BaseAction {
+        private static final long serialVersionUID = 1153101086949870538L;
+
+        public AboutAction() {
+            super("About", KeyEvent.VK_A, null);
+        }
+
+        public void actionPerformed(ActionEvent e) {
+            SplashScreen splashScreen = new SplashScreen(MainPanel.this);
+            splashScreen.setVisible(true);
         }
     }
 
     private class ExitAction extends BaseAction {
+        private static final long serialVersionUID = -1093284110665167816L;
+
         public ExitAction() {
             super("Exit", KeyEvent.VK_X, KeyStroke.getKeyStroke(KeyEvent.VK_F4, KeyEvent.ALT_MASK));
         }
@@ -313,169 +333,274 @@ public class MainPanel extends JFrame {
     }
 
     private class FindAction extends BaseAction {
+        private static final long serialVersionUID = -1955439185530709222L;
+
         public FindAction() {
             super("Find...", KeyEvent.VK_F, KeyStroke.getKeyStroke(KeyEvent.VK_F, KeyEvent.CTRL_MASK));
         }
 
-        public void actionPerformed(ActionEvent e) {
-            FindModel model = findContext == null ? new FindModel(logReader.getTableColumnModel()) : findContext.getModel();
+        public void actionPerformed(ActionEvent event) {
+            final FindModel model = findContext == null ? new FindModel(logReader.getTableColumnModel()) : findContext.getModel();
             FindDialog<FindModel> dlg = new FindDialog<FindModel>(MainPanel.this, model);
             if (dlg.execute()) {
                 findContext = new FindContext(model);
-                LogColumnModel lcm = (LogColumnModel) table.getColumn(model.getColumns().getSelectedItem());
-                final int rowIdx = model.isFromCursor() && table.getSelectedRow() >= 0 ? table.getSelectedRow() : 0;
-                for (int i = rowIdx; i < logReader.getRowCount(); i++) {
-                    try {
-                        String txt = logReader.get(i, lcm.getGroup());
-                        if (findContext.accept(txt)) {
-                            scrollToRow(i);
-                            if (lcm == logReader.getTableColumnModel().getMessageColumn()) {
-                                highlightText(findContext);
+                final LogColumnModel lcm = (LogColumnModel) table.getColumn(model.getColumns().getSelectedItem());
+                final int startRow = model.isFromCursor() && table.getSelectedRow() >= 0 ? table.getSelectedRow() : 0;
+                new FindWorker(lcm) {
+                    protected boolean doRun() {
+                        for (int i = startRow; i < logReader.getRowCount(); i++) {
+                            if (accept(i)) {
+                                return true;
                             }
-                            return;
                         }
-                    } catch (IOException e1) {
-                        // skip row
-                        e1.printStackTrace();
+                        return false;
                     }
-                }
-                new MessageDialog(MainPanel.this, "Find", "\"" + model.getText() + "\" not found").execute();
+                }.start();
             }
         }
 
     }
 
     private class FindNextAction extends BaseAction {
+        private static final long serialVersionUID = 282209051694714602L;
+
         public FindNextAction() {
             super("Find next", KeyEvent.VK_N, KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
         }
 
-        public void actionPerformed(ActionEvent e) {
-            int curRow;
+        public void actionPerformed(ActionEvent event) {
+            final int startRow;
             if (findContext == null) {
                 FindModel model = new FindModel(logReader.getTableColumnModel());
                 FindDialog<FindModel> dlg = new FindDialog<FindModel>(MainPanel.this, model);
                 if (!dlg.execute()) return;
-                curRow = 0;
+                startRow = 0;
                 findContext = new FindContext(model);
             } else {
-                curRow = table.getSelectedRow() + 1;
-                findContext.getFindResults().clear();
+                startRow = table.getSelectedRow() + 1;
             }
-            LogColumnModel lcm = (LogColumnModel) table.getColumn(findContext.getModel().getColumns().getSelectedItem());
-            for (int i = curRow; i < logReader.getRowCount(); i++) {
-                try {
-                    String txt = logReader.get(i, lcm.getGroup());
-                    if (findContext.accept(txt)) {
-                        scrollToRow(i);
-                        if (lcm == logReader.getTableColumnModel().getMessageColumn()) {
-                            highlightText(findContext);
+            final LogColumnModel lcm = (LogColumnModel) table.getColumn(findContext.getModel().getColumns().getSelectedItem());
+            new FindWorker(lcm) {
+                protected boolean doRun() {
+                    for (int i = startRow; i < logReader.getRowCount(); i++) {
+                        if (accept(i)) {
+                            return true;
                         }
-                        return;
                     }
-                } catch (IOException e1) {
-                    // skip row
-                    e1.printStackTrace();
+                    return false;
                 }
-            }
-            new MessageDialog(MainPanel.this, "Find", "\"" + findContext.getModel().getText() + "\" not found").execute();
+            }.start();
         }
     }
 
     private class FindPreviousAction extends BaseAction {
+        private static final long serialVersionUID = 138867181219627494L;
+
         public FindPreviousAction() {
             super("Find previous", KeyEvent.VK_P, KeyStroke.getKeyStroke(KeyEvent.VK_F3, KeyEvent.SHIFT_MASK));
         }
 
-        public void actionPerformed(ActionEvent e) {
-            int curRow;
+        public void actionPerformed(ActionEvent event) {
+            final int startRow;
             if (findContext == null) {
                 FindModel model = new FindModel(logReader.getTableColumnModel());
                 FindDialog<FindModel> dlg = new FindDialog<FindModel>(MainPanel.this, model);
                 if (!dlg.execute()) return;
-                curRow = logReader.getRowCount() - 1;
+                startRow = logReader.getRowCount() - 1;
                 findContext = new FindContext(model);
             } else {
-                curRow = table.getSelectedRow() - 1;
-                findContext.getFindResults().clear();
+                startRow = table.getSelectedRow() - 1;
             }
             LogColumnModel lcm = (LogColumnModel) table.getColumn(findContext.getModel().getColumns().getSelectedItem());
-            for (int i = curRow; i >= 0; i--) {
-                try {
-                    String txt = logReader.get(i, lcm.getGroup());
-                    if (findContext.accept(txt)) {
-                        scrollToRow(i);
-                        if (lcm == logReader.getTableColumnModel().getMessageColumn()) {
-                            highlightText(findContext);
+            new FindWorker(lcm) {
+                protected boolean doRun() {
+                    for (int i = startRow; i >= 0; i--) {
+                        if (accept(i)) {
+                            return true;
                         }
-                        return;
                     }
-                } catch (IOException e1) {
-                    // skip row
-                    e1.printStackTrace();
+                    return false;
                 }
+            }.start();
+        }
+    }
+
+    private abstract class FindWorker extends Worker {
+
+        private int foundRow;
+        protected final LogColumnModel columnModel;
+
+        public FindWorker(LogColumnModel lcm) {
+            this.columnModel = lcm;
+        }
+
+        protected boolean accept(int row) {
+            try {
+                String txt = logReader.get(row, columnModel.getGroup());
+                if (findContext.accept(txt)) {
+                    foundRow = row;
+                    return true;
+                }
+            } catch (IOException e) {
+                log.debug(e);
             }
-            new MessageDialog(MainPanel.this, "Find", "\"" + findContext.getModel().getText() + "\" not found").execute();
+            return false;
+        }
+
+        protected void doFinish() {
+            if (getValue()) {
+                table.scrollToRow(foundRow);
+                if (columnModel == logReader.getTableColumnModel().getMessageColumn()) {
+                    highlightText();
+                }
+            } else {
+                new MessageDialog(MainPanel.this, "Find", "\"" + findContext.getModel().getText() + "\" not found").execute();
+            }
         }
     }
 
     private class SetFilterAction extends BaseAction {
+        private static final long serialVersionUID = -4707623048237118270L;
 
         public SetFilterAction() {
             super("Set filter", KeyEvent.VK_R, KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0));
         }
 
         public void actionPerformed(ActionEvent e) {
-            getRootPane().setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-            try {
-                if (filterModel == null) {
-                    filterModel = new FilterModel(logReader.getIdx());
-                }
-                FilterDialog<FilterModel> dlg = new FilterDialog<FilterModel>(MainPanel.this, filterModel);
-                if (dlg.execute()) {
+            if (filterModel == null) {
+                filterModel = new FilterModel(logReader.getIdx());
+            }
+            FilterDialog<FilterModel> dlg = new FilterDialog<FilterModel>(MainPanel.this, filterModel);
+            if (dlg.execute()) {
+                int oldRowNum = table.getSelectedRow();
+                final RowId rowId = oldRowNum < 0 ? null : logReader.getId(oldRowNum);
+                new Worker() {
                     int newRowNum;
-                    if (logReader.getRowCount() > 0) {
-                        final int oldRowNum = table.getSelectedRow() >= 0 ? table.getSelectedRow() : 0;
-                        final RowId rowId = logReader.getId(oldRowNum);
+
+                    protected boolean doRun() {
                         logReader.applyFilter(filterModel);
-                        newRowNum = logReader.findNearestRow(rowId);
-                    } else {
-                        logReader.applyFilter(filterModel);
-                        newRowNum = 0;
+                        newRowNum = rowId == null ? 0 : logReader.findNearestRow(rowId);
+                        return true;
                     }
-                    ((AbstractTableModel) table.getModel()).fireTableDataChanged();
-                    scrollToRow(newRowNum);
-                }
-            } finally {
-                getRootPane().setCursor(Cursor.getDefaultCursor());
+
+                    protected void doFinish() {
+                        ((AbstractTableModel) table.getModel()).fireTableDataChanged();
+                        table.scrollToRow(newRowNum);
+                    }
+                }.start();
+            }
+        }
+    }
+
+    private class FileOpenAction extends BaseAction {
+
+        public FileOpenAction() {
+            super("Open...", KeyEvent.VK_O, KeyStroke.getKeyStroke(KeyEvent.VK_O, KeyEvent.CTRL_MASK));
+        }
+
+        public void actionPerformed(ActionEvent event) {
+            final String fileName = Main.chooseFileName(MainPanel.this);
+            if (fileName != null) {
+                new FileWorker(fileName).start();
+            }
+        }
+
+    }
+
+    private class FileReopenAction extends BaseAction {
+
+        private final int MAX_LENGTH = 50;
+        private final String fileName;
+
+        public FileReopenAction(String fileName) {
+            super(null);
+            putValue(NAME, shortName(fileName));
+            putValue(SHORT_DESCRIPTION, fileName);
+            this.fileName = fileName;
+        }
+
+        public void actionPerformed(ActionEvent event) {
+            new FileWorker(fileName).start();
+        }
+
+        private String shortName(String name) {
+            if (name.length() > MAX_LENGTH) {
+                int idx = name.lastIndexOf(File.separatorChar);
+                return name.substring(0, MAX_LENGTH - (name.length() - idx)) + "..." + name.substring(idx);
+            }
+            return name;
+        }
+    }
+
+    private class FileWorker extends Worker {
+        private final String fileName;
+
+        public FileWorker(String fileName) {
+            this.fileName = fileName;
+        }
+
+        public boolean doRun() {
+            try {
+                final FilteredLogReader old = logReader;
+                logReader = new FilteredLogReader(new File(fileName), null);
+                old.close();
+                return true;
+            } catch (IOException e) {
+                new MessageDialog(MainPanel.this, "Error", e.getMessage()).execute();
+                return false;
+            }
+        }
+
+        protected void doFinish() {
+            if (getValue()) {
+                addRecentFile(fileName);
+                resetBookmarks.actionPerformed(null);
+                findContext = null;
+                filterModel = null;
+                initPanel();
+            } else {
+                removeRecentFile(fileName);
             }
         }
     }
 
     private class FileReloadAction extends BaseAction {
+        private static final long serialVersionUID = 3247194136219471046L;
+
         public FileReloadAction() {
             super("Reload", KeyEvent.VK_R, KeyStroke.getKeyStroke(KeyEvent.VK_R, KeyEvent.CTRL_MASK));
         }
 
         public void actionPerformed(ActionEvent e) {
-            getRootPane().setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-            try {
-                int row = table.getSelectedRow();
-                try {
-                    logReader.reload();
-                } catch (IOException ex) {
-                    ex.printStackTrace();
+            new Worker() {
+                private int row;
+
+                protected boolean doRun() {
+                    row = table.getSelectedRow();
+                    try {
+                        logReader.reload();
+                    } catch (IOException ex) {
+                        log.error(ex);
+                    }
+                    if (filterModel != null) {
+                        filterModel.update(logReader.getIdx());
+                    }
+                    logReader.applyFilter(filterModel);
+                    return true;
                 }
-                logReader.applyFilter(filterModel);
-                ((AbstractTableModel) table.getModel()).fireTableDataChanged();
-                scrollToRow(row);
-            } finally {
-                getRootPane().setCursor(Cursor.getDefaultCursor());
-            }
+
+                protected void doFinish() {
+                    ((AbstractTableModel) table.getModel()).fireTableDataChanged();
+                    table.scrollToRow(row);
+                    statusBar.updateFileLength();
+                }
+            }.start();
         }
     }
 
     private class ToggleBookmarkAction extends BaseAction {
+        private static final long serialVersionUID = -4750224291057056959L;
+
         public ToggleBookmarkAction() {
             super("Toggle Bookmark", KeyEvent.VK_B, KeyStroke.getKeyStroke(KeyEvent.VK_B, KeyEvent.CTRL_MASK));
         }
@@ -488,12 +613,16 @@ public class MainPanel extends JFrame {
                     bookmarks.add(rowId);
                 }
             }
-            nextBookmark.setEnabled(bookmarks.size() > 0);
-            prevBookmark.setEnabled(bookmarks.size() > 0);
+
+            final boolean hasBookmarks = bookmarks.size() > 0;
+            nextBookmark.setEnabled(hasBookmarks);
+            prevBookmark.setEnabled(hasBookmarks);
+            resetBookmarks.setEnabled(hasBookmarks);
         }
     }
 
     private abstract class GotoBookmarkAction extends BaseAction {
+        private static final long serialVersionUID = -3931436965953560933L;
 
         protected GotoBookmarkAction(String name, int mnemonic, KeyStroke accelerator) {
             super(name, mnemonic, accelerator);
@@ -514,7 +643,7 @@ public class MainPanel extends JFrame {
                 for (RowId rowId : bookmarks) {
                     if ((rowId.compareTo(curRow) * direction) > 0) {
                         int idx = logReader.findNearestRow(rowId);
-                        scrollToRow(idx);
+                        table.scrollToRow(idx);
                         return;
                     }
                 }
@@ -523,6 +652,8 @@ public class MainPanel extends JFrame {
     }
 
     private class NextBookmarkAction extends GotoBookmarkAction {
+        private static final long serialVersionUID = -8529937277725248238L;
+
         public NextBookmarkAction() {
             super("Next Bookmark", KeyEvent.VK_E, KeyStroke.getKeyStroke(KeyEvent.VK_N, KeyEvent.CTRL_MASK));
         }
@@ -533,6 +664,8 @@ public class MainPanel extends JFrame {
     }
 
     private class PreviousBookmarkAction extends GotoBookmarkAction {
+        private static final long serialVersionUID = 37004974802703769L;
+
         public PreviousBookmarkAction() {
             super("Previous Bookmark", KeyEvent.VK_V, KeyStroke.getKeyStroke(KeyEvent.VK_P, KeyEvent.CTRL_MASK));
         }
@@ -542,7 +675,24 @@ public class MainPanel extends JFrame {
         }
     }
 
+    private class ResetBookmarksAction extends BaseAction {
+        private static final long serialVersionUID = 5041673190688046365L;
+
+        public ResetBookmarksAction() {
+            super("Reset all bookmarks", 'a', KeyStroke.getKeyStroke(KeyEvent.VK_B, KeyEvent.ALT_MASK));
+        }
+
+        public void actionPerformed(ActionEvent e) {
+            bookmarks.clear();
+            table.repaint();
+            nextBookmark.setEnabled(false);
+            prevBookmark.setEnabled(false);
+            setEnabled(false);
+        }
+    }
+
     private class SyncAction extends BaseAction {
+        private static final long serialVersionUID = 8795943210191680542L;
 
         public SyncAction() {
             super("Sync by time", KeyEvent.VK_Y, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_MASK));
@@ -553,73 +703,14 @@ public class MainPanel extends JFrame {
             int rowIdx = table.getSelectedRow();
             if (colIdx != -1 && rowIdx != -1) {
                 String time = table.getValueAt(rowIdx, colIdx).toString();
-                Preferences prefs = Preferences.userNodeForPackage(MainPanel.class);
+                Prefs prefs = Prefs.getInstance();
                 synchronized (syncRunner) {
                     long t = System.currentTimeMillis();
-                    syncRunner.updateTimestamp(t);
-                    prefs.putLong(SYNC_TIME_KEY, t);
-                    prefs.put(SYNC_VALUE_KEY, time);
+                    syncRunner.setTimestamp(t);
+                    prefs.setSyncTime(t);
+                    prefs.setSyncValue(time);
                 }
             }
-        }
-    }
-
-    private class JLogTable extends JTable {
-
-        private final CellRenderer defaultCellRenderer = new CellRenderer();
-
-        public JLogTable() {
-            super(new LogTableModel(), logReader.getTableColumnModel());
-            getTableHeader().addMouseListener(new ColumnFitAdapter());
-        }
-
-        public TableCellRenderer getDefaultRenderer(Class<?> columnClass) {
-            return defaultCellRenderer;
-        }
-    }
-
-    private class CellRenderer extends DefaultTableCellRenderer {
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-
-            LogColumnModel colModel = (LogColumnModel) logReader.getTableColumnModel().getColumn(column);
-            Color color = colModel.getColor(value.toString());
-            if (color != null) {
-                c.setForeground(color);
-            } else {
-                c.setForeground(table.getForeground());
-            }
-
-            RowId rowId = logReader.getId(row);
-            if (bookmarks.contains(rowId) && !isSelected && !hasFocus) {
-                c.setBackground(Color.CYAN);
-            } else if (isSelected) {
-                c.setBackground(table.getSelectionBackground());
-            } else {
-                c.setBackground(table.getBackground());
-            }
-            return c;
-        }
-    }
-
-    private class TableTransferHandler extends TransferHandler {
-        protected Transferable createTransferable(JComponent c) {
-            if (c == table) {
-                if (table.getSelectedRow() > 0) {
-                    try {
-                        String str = logReader.get(table.getSelectedRow());
-                        return new StringSelection(str);
-                    } catch (IOException e1) {
-                        // do nothong
-                    }
-                }
-
-            }
-            return null;
-        }
-
-        public int getSourceActions(JComponent c) {
-            return COPY;
         }
     }
 
@@ -627,27 +718,57 @@ public class MainPanel extends JFrame {
         private long timestamp;
 
         public void run() {
-            Preferences prefs = Preferences.userNodeForPackage(MainPanel.class);
-            timestamp = prefs.getLong(SYNC_TIME_KEY, 0);
+            Prefs prefs = Prefs.getInstance();
+            timestamp = prefs.getSyncTime();
             for (; ;) {
                 synchronized (this) {
-                    if (timestamp < prefs.getLong(SYNC_TIME_KEY, 0)) {
-                        String str = prefs.get(SYNC_VALUE_KEY, "");
-                        System.out.println("sync for time: " + str);
+                    if (timestamp < prefs.getSyncTime()) {
+                        String str = prefs.getSyncValue();
+                        log.info("sync for time: " + str);
                         syncForTime(str);
-                        timestamp = prefs.getLong(SYNC_TIME_KEY, 0);
+                        timestamp = prefs.getSyncTime();
                     }
                 }
                 try {
-                    Thread.sleep(300);
+                    Thread.sleep(333);
                 } catch (InterruptedException e) {
                     break;
                 }
             }
         }
 
-        public void updateTimestamp(long time) {
+        public void setTimestamp(long time) {
             timestamp = time;
         }
+    }
+
+    private abstract class Worker extends SwingWorker<Boolean> {
+
+        private void setEnabled(boolean enabled) {
+            JMenuBar menu = getJMenuBar();
+            for (int i = 0; i < menu.getMenuCount(); i++) {
+                menu.getMenu(i).setEnabled(enabled);
+            }
+            panel.setEnabled(enabled);
+            table.setEnabled(enabled);
+            text.setEnabled(enabled);
+        }
+
+        public final Boolean construct() {
+            getRootPane().setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+            setEnabled(false);
+            return doRun();
+        }
+
+        protected abstract boolean doRun();
+
+        protected abstract void doFinish();
+
+        public final void finished() {
+            doFinish();
+            setEnabled(true);
+            getRootPane().setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+        }
+
     }
 }

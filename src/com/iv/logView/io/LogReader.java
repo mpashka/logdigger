@@ -1,46 +1,72 @@
 package com.iv.logView.io;
 
+import com.iv.logView.logging.Log;
+import com.iv.logView.logging.LogFactory;
 import com.iv.logView.model.LogColumnModel;
 import com.iv.logView.model.LogTableColumnModel;
 import com.iv.logView.xml.LogFormatReader;
 
 import java.io.File;
-import java.io.FilenameFilter;
+import java.io.FileFilter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public abstract class LogReader {
+//todo think about synchronization
+public class LogReader {
 
-    public static final String[] KNOWN_TYPES = new String[]{"smp", "slee", "sleeNew", "guard"};
+    private static final Log log = LogFactory.getLogger(LogReader.class);
 
     private final Pattern pattern;
+    private final File file;
     private final RandomAccessReader dataIn;
     private final List<IndexRecord> index = new ArrayList<IndexRecord>();
     private final Map<LogColumnModel, Set<String>> idxMap = new HashMap<LogColumnModel, Set<String>>();
     private final LogTableColumnModel tblColumnModel;
     private final ColumnCache columnCache = new ColumnCache();
+    private ProgressListener progressListener;
 
-
-    public LogReader(File file) throws IOException {
+    protected LogReader(File file, ProgressListener progressListener) throws IOException {
+        if (progressListener != null) {
+            setProgressListener(progressListener);
+        }
+        this.file = file;
         tblColumnModel = recognizeLogFormat(file);
-        pattern = Pattern.compile(tblColumnModel.getPattern(), Pattern.DOTALL);
-        dataIn = new RandomAccessReader(file, 0x8000);
+        pattern = tblColumnModel.getPattern();
+        dataIn = new RandomAccessReader(file);
         reload();
     }
 
-    public void reload() throws IOException {
-        columnCache.invalidate();
-        skipInvalidChars(dataIn);
-        createIndex();
+    public synchronized void reload() throws IOException {
+            columnCache.invalidate();
+            skipInvalidChars(dataIn);
+            createIndex();
+    }
+
+    public synchronized void close() {
+        try {
+            dataIn.close();
+        } catch (IOException e) {
+            //ignore
+        }
+    }
+
+    public File getFile() {
+        return file;
     }
 
     private LogTableColumnModel recognizeLogFormat(File file) throws IOException {
@@ -52,44 +78,77 @@ public abstract class LogReader {
         } finally {
             rar.close();
         }
+        if (str == null) {
+            throw new IOException("Log file is empty");
+        }
 
-        File[] files = new File(System.getProperty("xml.dir", "./xml")).listFiles(new FilenameFilter() {
-            public boolean accept(File dir, String name) {
-                return name.toLowerCase().endsWith(".xml");
+        final List<URL> urls = new LinkedList<URL>();
+        new File(System.getProperty("xml.dir", "./xml")).listFiles(new FileFilter() {
+            @Override
+            public boolean accept(File f) {
+                if (!f.isDirectory() && f.getName().toLowerCase().endsWith(".xml")) {
+                    try {
+                        urls.add(f.toURI().toURL());
+                    } catch (MalformedURLException e) {
+                        // ignore
+                    }
+                }
+                return true;
             }
         });
-
-        if (files != null) {
-            for (File f : files) {
-                System.out.println("Trying format '" + f.getName() + "'");
-                LogFormatReader reader = new LogFormatReader(f);
-                LogTableColumnModel tblColumnModel = reader.read();
-                Matcher m = Pattern.compile(tblColumnModel.getPattern()).matcher(str);
-                if (m.find()) {
-                    System.out.println("Format '" + f.getName() + "' is OK");
-                    return tblColumnModel;
-                }
+        addDefaultFiles(urls);
+        for (URL u : urls) {
+            log.info("Trying format '" + u.getFile() + "'");
+            LogFormatReader reader = new LogFormatReader(u.openStream());
+            LogTableColumnModel model = reader.read();
+            Matcher m = model.getPattern().matcher(str);
+            if (m.find()) {
+                log.info("Format '" + u.getFile() + "' is OK");
+                return model;
             }
         }
         throw new IOException("Can not recognize log format");
     }
 
+    private void addDefaultFiles(List<URL> urls) throws IOException {
+        InputStream stream = getClass().getClassLoader().getResourceAsStream("META-INF/xml-list.properties");
+        Properties props = new Properties();
+        props.load(stream);
+        String lst = props.getProperty("xml-list");
+        for (StringTokenizer tok = new StringTokenizer(lst, ",", false); tok.hasMoreElements();) {
+            URL url = getClass().getClassLoader().getResource(tok.nextToken());
+            if (url != null) {
+                urls.add(url);
+            }
+        }
+    }
+
     /**
      * skip characters that great or equal to 0 and less then 0x20
      *
-     * @throws IOException
+     * @param rar reader
+     * @throws IOException if error
      */
     private void skipInvalidChars(RandomAccessReader rar) throws IOException {
         rar.seek(0);
+        if (rar.length() == 0) {
+            return;
+        }
         int ch;
         do {
             ch = rar.read();
-        } while (ch > -1 && ch < 0x20);
+        } while ((ch & 0x1f) == ch);
         rar.seek(rar.getFilePointer() - 1);
     }
 
+    public void setProgressListener(ProgressListener listener) {
+        this.progressListener = listener;
+    }
 
-    private void createIndex() throws IOException {
+    private synchronized void createIndex() throws IOException {
+        if (progressListener != null) {
+            progressListener.onBegin();
+        }
         StringCache sc = new StringCache();
         idxMap.clear();
         index.clear();
@@ -101,19 +160,19 @@ public abstract class LogReader {
             }
         }
 
-        long pos = dataIn.getFilePointer();
-
+        int pos = dataIn.getFilePointer();
         String str;
         final Matcher m = pattern.matcher("");
         while ((str = dataIn.readLine()) != null) {
-            m.reset(str);
-            if (m.matches()) {
+            if (progressListener != null) {
+                progressListener.onProgress((int) (100f * pos / dataIn.length()));
+            }
+            if (m.reset(str).matches()) {
                 final IndexRecord lastRec = getLastRecord();
                 if (lastRec != null) {
-                    lastRec.size = (int) (pos - lastRec.position);
+                    lastRec.size = pos - lastRec.position;
                 }
-                IndexRecord rec = new IndexRecord(pos);
-
+                final IndexRecord rec = new IndexRecord(pos);
                 for (Map.Entry<LogColumnModel, Set<String>> entry : idxMap.entrySet()) {
                     String value = sc.get(m.group(entry.getKey().getGroup()));
                     entry.getValue().add(value);
@@ -123,30 +182,33 @@ public abstract class LogReader {
             }
             pos = dataIn.getFilePointer();
         }
+        if (progressListener != null) {
+            progressListener.onEnd();
+        }
         final IndexRecord lastRec = getLastRecord();
         if (lastRec != null) {
-            lastRec.size = (int) (dataIn.getFilePointer() - lastRec.position);
+            lastRec.size = dataIn.getFilePointer() - lastRec.position;
         }
     }
 
-    public Map<LogColumnModel, Set<String>> getIdx() {
+    public synchronized Map<LogColumnModel, Set<String>> getIdx() {
         return Collections.unmodifiableMap(idxMap);
     }
 
-    public int getRowCount() {
+    public synchronized int getRowCount() {
         return getIndex().size();
     }
 
-    public String get(int rowIdx) throws IOException {
+    public synchronized String get(int rowIdx) throws IOException {
         final IndexRecord rec = getIndex().get(rowIdx);
         return get(rec);
     }
 
-    public String get(int rowIdx, int group) throws IOException {
+    public synchronized String get(int rowIdx, int group) throws IOException {
         return columnCache.getValue(rowIdx, group - 1);
     }
 
-    public String get(IndexRecord rec, int group) throws IOException {
+    public synchronized String get(IndexRecord rec, int group) throws IOException {
         return columnCache.getValue(rec, group - 1);
     }
 
@@ -154,24 +216,34 @@ public abstract class LogReader {
         return tblColumnModel;
     }
 
-    protected String get(IndexRecord rec) throws IOException {
+    protected synchronized String get(IndexRecord rec) throws IOException {
         dataIn.seek(rec.position);
-        char[] buf = new char[rec.size];
-        dataIn.read(buf);
-        return new String(buf);
+        char[] inBuf = new char[rec.size];
+        char[] outBuf = new char[rec.size];
+        dataIn.read(inBuf);
+        int skip = 0;
+        for (int i = 0; i < inBuf.length; i++) {
+            if (inBuf[i] == '\r') {
+                skip++;
+            } else {
+                outBuf[i - skip] = inBuf[i];
+            }
+        }
+        return new String(outBuf, 0, outBuf.length - skip);
     }
 
-    public RowId getId(int rowIdx) {
+    public synchronized RowId getId(int rowIdx) {
         return getIndex().get(rowIdx);
     }
 
-    public int findRow(RowId id) {
+    public synchronized int findRow(RowId id) {
         return Collections.binarySearch(getIndex(), id);
     }
 
-    public int findNearestRow(final LogColumnModel model, final String value) {
+    public synchronized int findNearestRow(final LogColumnModel model, final String value) {
         final int group = model.getGroup();
         int rowIdx = Collections.binarySearch(getIndex(), null, new Comparator<IndexRecord>() {
+            @Override
             public int compare(IndexRecord o1, IndexRecord o2) {
                 try {
                     return get(o1, group).compareTo(value);
@@ -181,7 +253,7 @@ public abstract class LogReader {
             }
         });
         if (rowIdx < 0) {
-            return - rowIdx - 1;
+            return -rowIdx - 1;
         }
         try {
             while (rowIdx > 0 && value.equals(get(rowIdx - 1, group))) {
@@ -202,7 +274,8 @@ public abstract class LogReader {
     }
 
     private IndexRecord getLastRecord() {
-        return index.size() > 0 ? index.get(index.size() - 1) : null;
+        final int last = index.size() - 1;
+        return last < 0 ? null : index.get(last);
     }
 
     protected List<IndexRecord> getIndex() {
@@ -210,11 +283,11 @@ public abstract class LogReader {
     }
 
     protected static class IndexRecord implements RowId {
-        private final long position;
+        private final int position;
         private int size;
         private final Map<LogColumnModel, String> values = new HashMap<LogColumnModel, String>();
 
-        public IndexRecord(long position) {
+        public IndexRecord(int position) {
             this.position = position;
         }
 
@@ -226,22 +299,20 @@ public abstract class LogReader {
             return values.get(columnModel);
         }
 
+        @Override
         public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj instanceof IndexRecord) {
-                IndexRecord that = (IndexRecord) obj;
-                return that.position == this.position;
-            }
-            return false;
+            return obj == this || obj instanceof IndexRecord && ((IndexRecord) obj).position == this.position;
         }
 
+        @Override
         public int hashCode() {
-            return (int) (position ^ (position >>> 32));
+            return position;
         }
 
-        public int compareTo(RowId o) {
+        @Override
+        public int compareTo(RowId other) {
             long thisVal = this.position;
-            long anotherVal = ((IndexRecord) o).position;
+            long anotherVal = ((IndexRecord) other).position;
             return (thisVal < anotherVal ? -1 : (thisVal == anotherVal ? 0 : 1));
         }
 
@@ -283,11 +354,14 @@ public abstract class LogReader {
         }
 
         public String getValue(int row, int col) throws IOException {
+            if (row < 0 || row >= getRowCount()) {
+                throw new IOException("Row index out of bounds. index:" + row + " size:" + getRowCount());
+            }
             IndexRecord rec = getIndex().get(row);
             return getValue(rec, col);
         }
 
-        public void invalidate() {
+        public synchronized void invalidate() {
             cachedRowId = null;
             columns.clear();
         }

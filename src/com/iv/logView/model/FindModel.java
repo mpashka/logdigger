@@ -1,15 +1,13 @@
 package com.iv.logView.model;
 
-import javax.swing.*;
+import com.iv.logView.Prefs;
+
 import java.util.Enumeration;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.prefs.Preferences;
+import javax.swing.ComboBoxModel;
+import javax.swing.DefaultComboBoxModel;
 
 public class FindModel {
-
-    private static final int MAX_HISTORY_LENGTH = 20;
-    private static final String HISTORY_KEY = "history";
 
     private String text = "";
     private final ComboBoxModel colNames;
@@ -27,7 +25,6 @@ public class FindModel {
         colNames = new DefaultComboBoxModel(cols);
         colNames.setSelectedItem(cols);
         colNames.setSelectedItem(tblModel.getMessageColumn().getName());
-        restoreHistory();
     }
 
     public String getText() {
@@ -35,34 +32,11 @@ public class FindModel {
     }
 
     public void setText(String text) {
-        LinkedList<String> history = restoreHistory();
+        List<String> history = Prefs.getInstance().getSearchTextHistory();
         this.text = text;
         history.remove(text);
-        history.addFirst(text);
-        while (history.size() > MAX_HISTORY_LENGTH) {
-            history.removeLast();
-        }
-        saveHistory(history);
-    }
-
-    private void saveHistory(LinkedList<String> history) {
-        Preferences prefs = Preferences.userNodeForPackage(FindModel.class);
-        StringBuilder sb = new StringBuilder();
-        for (String str : history) {
-            if (sb.length() > 0) sb.append((char) 0);
-            sb.append(str);
-        }
-        prefs.put(HISTORY_KEY, sb.toString());
-    }
-
-    private LinkedList<String> restoreHistory() {
-        LinkedList<String> history = new LinkedList<String>();
-        Preferences prefs = Preferences.userNodeForPackage(FindModel.class);
-        String[] strs = prefs.get(HISTORY_KEY, "").split("\\x00");
-        for (String str : strs) {
-            if (str.length() > 0) history.add(str);
-        }
-        return history;
+        history.add(0, text);
+        Prefs.getInstance().setSearchTextHistory(history);
     }
 
     public boolean isRegexp() {
@@ -90,7 +64,7 @@ public class FindModel {
     }
 
     public String[] getHistory() {
-        final List<String> history = restoreHistory();
+        final List<String> history = Prefs.getInstance().getSearchTextHistory();
         return history.toArray(new String[history.size()]);
     }
 

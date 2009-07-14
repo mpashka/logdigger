@@ -29,6 +29,7 @@ public class FindContext {
     }
 
     public boolean accept(String str) {
+        findResults.clear();
         return finder.accept(str);
     }
 
@@ -54,12 +55,11 @@ public class FindContext {
 
         public boolean accept(String str, int fromIndex) {
             matcher.reset(str);
-            if (matcher.find(fromIndex)) {
+            while (matcher.find(fromIndex)) {
+                fromIndex = matcher.end();
                 findResults.add(new FindResult(matcher.start(), matcher.end() - matcher.start()));
-                accept(str, matcher.end());
-                return true;
             }
-            return false;
+            return findResults.size() > 0;
         }
     }
 
@@ -71,14 +71,14 @@ public class FindContext {
         }
 
         public boolean accept(String str, int fromIndex) {
-            int n = str.indexOf(findStr, fromIndex);
-            if (n == -1) return false;
-            findResults.add(new FindResult(n, findStr.length()));
-            fromIndex = n + findStr.length();
-            if (fromIndex < str.length()) {
-                accept(str, fromIndex);
+            for (int n = str.indexOf(findStr, fromIndex); n >= 0; n = str.indexOf(findStr, fromIndex)) {
+                findResults.add(new FindResult(n, findStr.length()));
+                fromIndex = n + findStr.length();
+                if (fromIndex < str.length()) {
+                    accept(str, fromIndex);
+                }
             }
-            return true;
+            return findResults.size() > 0;
         }
     }
 
