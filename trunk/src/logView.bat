@@ -1,4 +1,9 @@
 @echo off
 set HOME_DIR=%~dp0
-set CP=%HOME_DIR%lib\looks-1.2.1.jar;%HOME_DIR%lib\logView.jar;%HOME_DIR%lib\TableLayout.jar
-java -Xmx128m -classpath "%CP%" -Dxml.dir="%HOME_DIR%xml" com.iv.logView.Main %*
+set OPT=-Xmx128m -Dxml.dir="%HOME_DIR%xml" -Dlog.dir="%HOME_DIR%log" -Djava.ext.dirs="%HOME_DIR%lib"
+if "%JAVA_HOME%"=="" (
+set JAVA_EXE=javaw
+) ELSE (
+set JAVA_EXE=%JAVA_HOME%\bin\javaw.exe
+)
+start /b cmd /c ("%JAVA_EXE%" %OPT% com.iv.logView.Main %*)

@@ -1,8 +1,11 @@
 package com.iv.logView.xml;
 
+import com.iv.logView.logging.Log;
+import com.iv.logView.logging.LogFactory;
 import com.iv.logView.model.LogColumnModel;
 import com.iv.logView.model.LogTableColumnModel;
 import org.xml.sax.Attributes;
+import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.helpers.DefaultHandler;
@@ -15,25 +18,27 @@ import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import java.awt.*;
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.BufferedInputStream;
+import java.io.InputStream;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class LogFormatReader {
 
+    private static final Log log = LogFactory.getLogger(LogFormatReader.class);
     private static Schema schema;
-    private File file;
+    private InputStream inputStream;
     public LogTableColumnModel tblColumnModel;
 
-    public LogFormatReader(File file) {
-        this.file = file;
+    public LogFormatReader(InputStream inputStream) {
+        this.inputStream = inputStream;
     }
 
     public LogTableColumnModel read() throws LogFormatException {
-        LogHandler handler;
         try {
             if (schema == null) {
                 SchemaFactory schemaFactory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-                Source schemaSrc = new StreamSource(ClassLoader.getSystemResourceAsStream("log-format.xsd"));
+                Source schemaSrc = new StreamSource(getClass().getClassLoader().getResourceAsStream("log-format.xsd"));
                 schema = schemaFactory.newSchema(schemaSrc);
             }
 
@@ -41,8 +46,7 @@ public class LogFormatReader {
             saxParserFactory.setSchema(schema);
             saxParserFactory.setNamespaceAware(true);
             SAXParser parser = saxParserFactory.newSAXParser();
-            handler = new LogHandler();
-            parser.parse(new FileInputStream(file), handler);
+            parser.parse(new BufferedInputStream(inputStream), new LogHandler());
         } catch (Exception e) {
             throw new LogFormatException(e);
         }
@@ -64,9 +68,11 @@ public class LogFormatReader {
         private static final String A_VALUE = "value";
         private static final String A_COLOR = "color";
 
-        private final StringBuilder buf = new StringBuilder();
         private int colIndex = 0;
+        private Locator locator;
+        private final StringBuilder buf = new StringBuilder();
 
+        @Override
         public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
             buf.setLength(0);
             if (T_COLUMN.equals(qName)) {
@@ -94,29 +100,45 @@ public class LogFormatReader {
             }
         }
 
+        @Override
         public void endElement(String uri, String localName, String qName) throws SAXException {
             if (T_NAME.equals(qName)) {
                 //do nothing
             } else if (T_PATTERN.equals(qName)) {
-                String pattern = buf.toString().trim();
+                Pattern pattern;
+                try {
+                    pattern = Pattern.compile(buf.toString().trim(), Pattern.DOTALL);
+                } catch (PatternSyntaxException e) {
+                    throw new SAXParseException(e.getMessage(), locator, e);
+                }
                 tblColumnModel = new LogTableColumnModel(pattern);
             }
         }
 
+
+        @Override
+        public void setDocumentLocator(Locator locator) {
+            this.locator = locator;
+        }
+
+        @Override
         public void characters(char ch[], int start, int length) throws SAXException {
             buf.append(ch, start, length);
         }
 
+        @Override
         public void warning(SAXParseException e) throws SAXException {
-            System.err.println(e.toString());
+            log.warning(e.toString(), e);
         }
 
+        @Override
         public void error(SAXParseException e) throws SAXException {
-            System.err.println(e.toString());
+            log.error(e);
         }
 
+        @Override
         public void fatalError(SAXParseException e) throws SAXException {
-            System.err.println(e.toString());
+            log.error(e);
         }
 
     }

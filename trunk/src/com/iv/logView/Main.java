@@ -1,55 +1,90 @@
 package com.iv.logView;
 
 import com.iv.logView.io.FilteredLogReader;
+import com.iv.logView.logging.Log;
+import com.iv.logView.logging.LogFactory;
 import com.iv.logView.ui.MainPanel;
 import com.iv.logView.ui.MessageDialog;
+import com.iv.logView.ui.SplashScreen;
 
-import javax.swing.*;
 import java.io.File;
-import java.util.prefs.Preferences;
+import java.util.regex.Pattern;
+import java.awt.*;
+import javax.swing.JFileChooser;
+import javax.swing.UIManager;
+import javax.swing.filechooser.FileFilter;
 
 public class Main {
 
-    private static final String LAS_DIR_KEY = "last.dir";
+    private static final Log LOG = LogFactory.getLogger(Main.class);
+    private static final String LOOK_AND_FEEL = "com.jgoodies.plaf.plastic.PlasticLookAndFeel";
 
-    public static void main(String... args) throws Exception {
+    public static void main(String[] args) throws Exception {
+
         try {
-            UIManager.setLookAndFeel("com.jgoodies.plaf.plastic.PlasticLookAndFeel");
+            UIManager.setLookAndFeel(LOOK_AND_FEEL);
         } catch (Exception e) {
-            // ignore. use default l&f
+            LOG.warning("Can't initialize L&F " + LOOK_AND_FEEL, e);
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         }
 
-        final String version = Main.class.getPackage().getImplementationVersion();
-        if (version != null) {
-            System.out.println("Version: " + version);
-        }
+        LOG.info("========================================");
 
         String fileName;
         if (args.length > 0) {
             fileName = args[0];
         } else {
-            fileName = chooseFileName();
+            fileName = chooseFileName(null);
             if (fileName == null) {
                 System.exit(0);
             }
         }
-        final File file = new File(fileName).getAbsoluteFile();
-        if (!file.exists() || file.isDirectory() || !file.canRead()) {
-            error("can't read file " + file.getName());
-        }
-        final Preferences prefs = Preferences.userNodeForPackage(Main.class);
-        prefs.put(LAS_DIR_KEY, file.getParentFile() == null ? "/" : file.getParentFile().getAbsolutePath());
+        
+        SplashScreen splashScreen = new SplashScreen(null);
+        splashScreen.setVisible(true);
+        try {
+            final String version = Main.class.getPackage().getImplementationVersion();
+            if (version != null) {
+                LOG.info("Version: " + version);
+            }
 
-        final MainPanel panel = new MainPanel(new FilteredLogReader(file));
-        panel.setTitle("LogView - " + file.getAbsolutePath());
-        panel.setVisible(true);
+            final File file = new File(fileName).getAbsoluteFile();
+            if (!file.exists() || file.isDirectory() || !file.canRead()) {
+                error("Can't read file " + file.getName());
+            }
+            Prefs.getInstance().setLastDir(file.getParentFile() == null ? "/" : file.getParentFile().getAbsolutePath());
+
+            FilteredLogReader logReader = new FilteredLogReader(file, splashScreen);
+            final MainPanel panel = new MainPanel(logReader);
+            logReader.setProgressListener(null);
+            panel.setVisible(true);
+        } catch (Exception ex) {
+            splashScreen.setVisible(false);
+            LOG.error(ex);
+            error(ex.getMessage());
+        } finally {
+            splashScreen.setVisible(false);
+            splashScreen.dispose();
+        }
     }
 
-    private static String chooseFileName() {
+    public static String chooseFileName(Component parent) {
+        final Pattern namePattern = Pattern.compile("\\.log(\\.\\d+)*$", Pattern.CASE_INSENSITIVE);
         JFileChooser chooser = new JFileChooser();
-        Preferences prefs = Preferences.userNodeForPackage(Main.class);
-        chooser.setCurrentDirectory(new File(prefs.get(LAS_DIR_KEY, "/")));
-        int returnVal = chooser.showOpenDialog(null);
+        chooser.setDialogTitle("Open log file");
+        chooser.setCurrentDirectory(new File(Prefs.getInstance().getLastDir()));
+        chooser.setMultiSelectionEnabled(false);
+        chooser.setFileFilter(new FileFilter() {
+            @Override
+            public boolean accept(File f) {
+                return f.isDirectory() || namePattern.matcher(f.getName()).find();
+            }
+            @Override
+            public String getDescription() {
+                return "Log Files";
+            }
+        });
+        int returnVal = chooser.showOpenDialog(parent);
         if (returnVal == JFileChooser.APPROVE_OPTION) {
             return chooser.getSelectedFile().getAbsolutePath();
         }
@@ -57,7 +92,7 @@ public class Main {
     }
 
     private static void error(String text) {
-        new MessageDialog(null, "ERROR", text).execute();
+        new MessageDialog(null, "Error", text).execute();
         System.exit(0);
     }
 

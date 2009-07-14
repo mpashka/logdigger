@@ -3,9 +3,7 @@ package com.iv.logView.ui;
 import info.clearthought.layout.TableLayout;
 
 import javax.swing.*;
-import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
@@ -44,8 +42,14 @@ public class JSelector extends JComponent {
             }
         };
 
-        add(new JLabel("Hidden:"), "1, 1");
-        add(new JLabel("Visible:"), "5, 1");
+        JLabel leftLbl =new JLabel("Hidden:");
+        leftLbl.setDisplayedMnemonic('H');
+        leftLbl.setLabelFor(leftLst);
+        add(leftLbl, "1, 1");
+        JLabel rightLbl = new JLabel("Visible:");
+        rightLbl.setDisplayedMnemonic('V');
+        rightLbl.setLabelFor(rightLst);
+        add(rightLbl, "5, 1");
 
         DefaultListModel lm = new DefaultListModel();
         Collection<String> col = new LinkedList<String>(all);
@@ -70,11 +74,11 @@ public class JSelector extends JComponent {
         JScrollPane rScroll = new JScrollPane(rightLst);
         add(rScroll, "5, 2, 5, 5");
 
-        final Dimension d = lScroll.getPreferredSize();
-        d.width = Math.max(lScroll.getPreferredSize().width, rScroll.getPreferredSize().width);
-        lScroll.setPreferredSize(d);
-        rScroll.setPreferredSize(d);
-
+        if (lm.isEmpty()) {
+            lScroll.setPreferredSize(rScroll.getPreferredSize());
+        } else if (rm.isEmpty()) {
+            rScroll.setPreferredSize(lScroll.getPreferredSize());
+        }
     }
 
     public Collection<String> getSelected() {
@@ -89,7 +93,7 @@ public class JSelector extends JComponent {
         int pos = 0;
         for (; pos < model.size(); pos++) {
             String c = (String) model.getElementAt(pos);
-            if (c.compareTo(element) >= 0) break;
+            if (c.compareToIgnoreCase(element) >= 0) break;
         }
         model.insertElementAt(element, pos);
     }
@@ -109,7 +113,7 @@ public class JSelector extends JComponent {
     private class ToLeftAction extends AbstractAction {
         public ToLeftAction() {
             putValue(NAME, "<");
-            putValue(ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.ALT_MASK));
+//            putValue(ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_L, KeyEvent.ALT_MASK));
         }
 
         public void actionPerformed(ActionEvent e) {
@@ -120,7 +124,7 @@ public class JSelector extends JComponent {
     private class ToRightAction extends AbstractAction {
         public ToRightAction() {
             putValue(NAME, ">");
-            putValue(ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, KeyEvent.ALT_MASK));
+//            putValue(ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_KP_RIGHT, KeyEvent.ALT_MASK));
         }
 
         public void actionPerformed(ActionEvent e) {

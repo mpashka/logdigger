@@ -9,7 +9,6 @@ import java.awt.event.KeyEvent;
 
 public class FindDialog<T extends FindModel> extends OkCancalDialog<T> {
     private JComboBox searchText;
-    private JComboBox searchIn;
     private JCheckBox regexpChkBox;
     private JCheckBox caseSensChkBox;
     private JCheckBox fromCursorChkBox;
@@ -32,8 +31,6 @@ public class FindDialog<T extends FindModel> extends OkCancalDialog<T> {
         model.setRegexp(regexpChkBox.isSelected());
         model.setCaseSensitive(caseSensChkBox.isSelected());
         model.setFromCursor(fromCursorChkBox.isSelected());
-        Object o = searchIn.getModel().getSelectedItem();
-
     }
 
     protected void cancel() {
@@ -68,7 +65,7 @@ public class FindDialog<T extends FindModel> extends OkCancalDialog<T> {
         searchInLbl.setDisplayedMnemonic(KeyEvent.VK_N);
         add(searchInLbl, "0, 1");
 
-        searchIn = new JComboBox(model.getColumns());
+        JComboBox searchIn = new JComboBox(model.getColumns());
         searchIn.setEditable(false);
         searchIn.setPreferredSize(new Dimension(300, searchIn.getPreferredSize().height));
         add(searchIn, "1, 1");

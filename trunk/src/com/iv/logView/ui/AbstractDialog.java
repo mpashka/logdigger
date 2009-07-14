@@ -52,25 +52,19 @@ public abstract class AbstractDialog<T> {
             dialog.setLocation(p.x + x, p.y + y);
         } else {
             Dimension frameSize = dialog.getSize();
-            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-            Insets screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(dialog.getGraphicsConfiguration());
-            int w = screenSize.width - screenInsets.left - screenInsets.right;
-            int h = screenSize.height - screenInsets.top - screenInsets.bottom;
-            if (frameSize.height > h) {
-                frameSize.height = h;
+            Point cp = GraphicsEnvironment.getLocalGraphicsEnvironment().getCenterPoint();
+            Dimension screenSize = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds().getSize();
+            if (frameSize.height > screenSize.height) {
+                frameSize.height = screenSize.height;
             }
-            if (frameSize.width > w) {
-                frameSize.width = w;
+            if (frameSize.width > screenSize.width) {
+                frameSize.width = screenSize.width;
             }
-            dialog.setLocation(
-                    (w - frameSize.width) / 2 + screenInsets.left,
-                    (h - frameSize.height) / 2 + screenInsets.top);
-
+            dialog.setLocation(cp.x - frameSize.width / 2, cp.y - frameSize.height / 2);
         }
     }
 
     protected void dispose() {
-
     }
 
     private void activateEscapeKey() {

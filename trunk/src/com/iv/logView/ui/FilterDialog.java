@@ -6,6 +6,7 @@ import info.clearthought.layout.TableLayout;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,21 +15,22 @@ import java.util.regex.PatternSyntaxException;
 
 public class FilterDialog<T extends FilterModel> extends OkCancalDialog<T> {
 
-    private JTextField patternEdit;
+    private JComboBox patternEdit;
     private Map<LogColumnModel, JSelector> selectors;
 
     public FilterDialog(Frame owner, T model) {
         super(owner, model);
     }
 
+    @Override
     protected boolean validate() {
-        if (patternEdit.getText() != null && patternEdit.getText().length() > 0) {
+        String pattern = (String) patternEdit.getSelectedItem();
+        if (pattern != null && pattern.length() > 0) {
             try {
-                Pattern.compile(patternEdit.getText());
+                Pattern.compile(pattern);
             } catch (PatternSyntaxException e) {
                 String msg;
                 if (e.getIndex() != -1) {
-                    patternEdit.setCaretPosition(e.getIndex());
                     msg = e.getDescription() + " near index " + e.getIndex();
                 } else {
                     msg = e.getDescription();
@@ -48,8 +50,9 @@ public class FilterDialog<T extends FilterModel> extends OkCancalDialog<T> {
         return true;
     }
 
+    @Override
     protected void submit(T model) {
-        getModel().setMessagePattern(patternEdit.getText());
+        getModel().setMessagePattern((String) patternEdit.getSelectedItem());
         for (LogColumnModel cm : selectors.keySet()) {
             Collection<String> selected = getModel().getSelected(cm);
             selected.clear();
@@ -57,41 +60,47 @@ public class FilterDialog<T extends FilterModel> extends OkCancalDialog<T> {
         }
     }
 
+    @Override
     protected void cancel() {
         // do nothing
     }
 
+    @Override
     protected void init() {
         setTitle("Filter");
         double[] cols = new double[]{TableLayout.FILL};
-        double[] rows = new double[]{TableLayout.PREFERRED};
+        double[] rows = new double[]{TableLayout.PREFERRED, TableLayout.FILL};
         TableLayout layout = new TableLayout(cols, rows);
         setLayout(layout);
 
         cols = new double[]{5, TableLayout.FILL, 5};
         rows = new double[]{TableLayout.PREFERRED, 5};
-        JPanel pan = new JPanel(new TableLayout(cols, rows));
+        final JPanel pan = new JPanel(new TableLayout(cols, rows));
         pan.setBorder(BorderFactory.createTitledBorder("Regular expression"));
-        patternEdit = new JTextField(getModel().getMessagePattern());
+        patternEdit = new JComboBox(getModel().getPatternHistory());
+        patternEdit.setEditable(true);
+        patternEdit.getEditor().setItem(getModel().getMessagePattern());
+        patternEdit.getEditor().selectAll();
         pan.add(patternEdit, "1, 0");
         add(pan, "0, 0");
 
-        int rn = 0;
-
+        JTabbedPane tabPan = new JTabbedPane();
+        int tabIdx = 0;
         selectors = new HashMap<LogColumnModel, JSelector>();
-        for (LogColumnModel cm : getModel().getColumns()) {
-            if (!cm.isIndexable()) continue;
-            pan = new JPanel(new BorderLayout());
-            pan.setBorder(BorderFactory.createTitledBorder(cm.getName()));
-            Collection<String> selected = getModel().getSelected(cm);
-            Collection<String> all = getModel().getAll(cm);
-            JSelector s = new JSelector(all, selected);
-            selectors.put(cm, s);
-            pan.add(s, BorderLayout.CENTER);
-
-            layout.insertRow(++rn, TableLayout.FILL);
-            add(pan, "0, " + rn);
+        for (LogColumnModel model : getModel().getColumns()) {
+            if (!model.isIndexable()) continue;
+            final JPanel selectorPan = new JPanel(new BorderLayout());
+//            selectorPan.setBorder(BorderFactory.createTitledBorder(model.getName()));
+            Collection<String> selected = getModel().getSelected(model);
+            Collection<String> all = getModel().getAll(model);
+            JSelector selector = new JSelector(all, selected);
+            selectors.put(model, selector);
+            selectorPan.add(selector, BorderLayout.CENTER);
+            tabPan.addTab("" + (tabIdx + 1) + " " + model.getName(), selector);
+            tabPan.setMnemonicAt(tabIdx, KeyEvent.VK_1 + tabIdx);
+            tabIdx++;
         }
+        add(tabPan, "0, 1");
     }
 
 }

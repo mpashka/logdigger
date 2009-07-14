@@ -5,7 +5,7 @@
         xsi:schemaLocation="http://www.i-vortex.com/log-format log-format.xsd">
     <name>SLEE</name>
     <pattern>
-        <![CDATA[^\d{4}-\d{2}-\d{2}\s(\d{2}:\d{2}:\d{2}[\.\,]\d{3})\s\[\s*(.+?)\]\s(\w+)\s+([\w\._-]+)\s+:\s+(.*)$]]>
+        <![CDATA[^\d{4}-\d{2}-\d{2}\s(\d{2}:\d{2}:\d{2}[\.\,]\d{3})\s+\[\s*(.+?)\]\s+(\w+)\s+([^\s]+)\s+:\s+(.*)$]]>
     </pattern>
     <column name="Time" group="1"/>
     <column name="Thread" group="2" indexable="true"/>
