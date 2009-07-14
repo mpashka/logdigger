@@ -35,6 +35,7 @@
         </exec>
         <xpath property="revision" file="info.xml"
                expression="iv:max(//descendant::commit/attribute::revision)"/>
+        <echo message="max version number: ${revision}"/>
         <delete file="info.xml" failonerror="false"/>
         <exec executable="svn" output="status.xml">
             <arg line="status --xml"/>
