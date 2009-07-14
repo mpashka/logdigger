@@ -1,30 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
 <project name="logView" default="rebuild" basedir=".">
 
-    <property name="version" value="2.1"/>
-    <property name="revision" value="0"/>
+    <target name="init">
 
-    <property name="src.dir" value="${basedir}/src"/>
-    <property name="classes.dir" value="${basedir}/classes"/>
-    <property name="dist.dir" value="${basedir}/dist"/>
-    <property name="lib.dir" value="${basedir}/lib"/>
-    <property name="jar.file" value="${dist.dir}/lib/logView.jar"/>
+        <property name="version" value="2.6"/>
+        <property name="revision" value="0"/>
 
-    <path id="class.path">
-        <fileset dir="${lib.dir}">
-            <include name="*.jar"/>
-        </fileset>
-    </path>
+        <property name="build.dir" value="${basedir}/build"/>
+        <property name="src.dir" value="${basedir}/src"/>
+        <property name="test-src.dir" value="${basedir}/test"/>
+        <property name="classes.dir" value="${build.dir}/production/logView"/>
+        <property name="test-classes.dir" value="${build.dir}/test/logView"/>
+        <property name="bin.dir" value="${build.dir}/bin"/>
+        <property name="lib.dir" value="${basedir}/lib"/>
+        <property name="dist.dir" value="${build.dir}/dist"/>
+        <property name="jar.file" value="${bin.dir}/lib/logView.jar"/>
 
-    <target name="clean">
-        <delete dir="${classes.dir}" failonerror="false"/>
-        <delete dir="${dist.dir}" failonerror="false"/>
+        <path id="class.path">
+            <fileset dir="${lib.dir}">
+                <include name="*.jar"/>
+            </fileset>
+        </path>
+
+        <path id="test-class.path">
+            <path refid="class.path"/>
+            <path location="${classes.dir}"/>
+            <path location="${test-classes.dir}"/>
+        </path>
+
+        <taskdef name="xpath" classname="com.iv.ant.XPathProperty" classpathref="class.path"/>
+
+        <exec executable="svn" output="info.xml">
+            <arg line="info --non-interactive --xml --recursive"/>
+        </exec>
+        <xpath property="revision" file="info.xml"
+               expression="iv:max(//descendant::commit/attribute::revision)"/>
+        <delete file="info.xml" failonerror="false"/>
+        <exec executable="svn" output="status.xml">
+            <arg line="status --xml"/>
+        </exec>
+        <xpath property="revision" value="dev" file="status.xml"
+               expression="//status/target/entry/wc-status/attribute::item"/>
+        <delete file="status.xml" failonerror="false"/>
+        <echo message="version: ${version}.${revision}"/>
     </target>
 
-    <target name="compile">
+    <target name="clean" depends="init">
+        <delete dir="${classes.dir}" failonerror="false"/>
+        <delete dir="${test-classes.dir}" failonerror="false"/>
+        <delete dir="${bin.dir}" failonerror="false"/>
+    </target>
+
+    <target name="compile" depends="init">
         <mkdir dir="${classes.dir}"/>
         <javac srcdir="${src.dir}"
                destdir="${classes.dir}"
                classpathref="class.path"
+               target="1.5"
                debug="true"
                optimize="true">
         </javac>
@@ -33,27 +65,62 @@
                 <include name="**/*.properties"/>
                 <include name="**/*.xml"/>
                 <include name="**/*.xsd"/>
+                <include name="**/*.png"/>
             </fileset>
         </copy>
+
+        <fileset dir="${basedir}/xml" id="xml.files">
+            <include name="*.xml"/>
+        </fileset>
+        <copy todir="${classes.dir}/META-INF" preservelastmodified="true">
+            <fileset refid="xml.files"/>
+        </copy>
+        <pathconvert pathsep="," property="xml-files" refid="xml.files">
+            <map from="${basedir}/xml/" to="META-INF/"/>
+        </pathconvert>
+        <echo message="xml-list: ${xml-files}" file="${classes.dir}/META-INF/xml-list.properties"/>
+
+    </target>
+
+    <target name="compile-test" depends="compile">
+        <mkdir dir="${test-classes.dir}"/>
+        <javac srcdir="${test-src.dir}"
+               destdir="${test-classes.dir}"
+               classpathref="test-class.path"
+               target="1.5"
+               debug="true"
+               optimize="true">
+        </javac>
+    </target>
+
+    <target name="test" depends="compile-test">
+        <!--
+                <junit fork="yes" haltonfailure="no">
+                    <classpath refid="test-class.path"/>
+                    <formatter type="plain" usefile="false"/>
+                    <batchtest>
+                        <fileset dir="${test-classes.dir}">
+                            <include name="**/*.class"/>
+                        </fileset>
+                    </batchtest>
+                </junit>
+        -->
+        <java classname="org.junit.runner.JUnitCore" fork="yes" failonerror="true">
+            <arg value="com.iv.logView.io.TestRandomAccessReader"/>
+            <arg value="com.iv.logView.io.TestIO"/>
+            <arg value="com.iv.logView.TestPrefs"/>
+            <classpath refid="test-class.path"/>
+        </java>
+
     </target>
 
     <target name="build" description="build all" depends="compile">
-        <mkdir dir="${dist.dir}/lib"/>
-        <mkdir dir="${dist.dir}/xml"/>
-<!--
-        <taskdef name="xpath" classname="com.iv.ant.XPathProperty" classpathref="class.path"/>
-        <xpath
-                property="revision"
-                file="${basedir}/.svn/entries"
-                expression="//child::svn:entry[attribute::kind='dir'][attribute::name='']/attribute::committed-rev"
-                prefix="svn"
-                namespace="svn:"
-                />
--->
+        <mkdir dir="${bin.dir}/lib"/>
+        <mkdir dir="${bin.dir}/xml"/>
         <tstamp>
             <format property="today" pattern="yyyy-MM-dd HH:mm:ss Z"/>
         </tstamp>
-        <jar destfile="${jar.file}" index="true" duplicate="fail">
+        <jar destfile="${jar.file}" duplicate="fail">
             <zipfileset dir="${classes.dir}" prefix=""/>
             <manifest>
                 <attribute name="Implementation-Vendor" value="i-Vortex, Inc."/>
@@ -63,21 +130,38 @@
                 <attribute name="Main-Class" value="com.iv.logView.Main"/>
             </manifest>
         </jar>
-        <copy todir="${dist.dir}/lib">
+        <copy todir="${bin.dir}/lib">
             <fileset dir="${lib.dir}">
                 <exclude name="ant-xpath.jar"/>
+                <exclude name="junit-4.1.jar"/>
             </fileset>
         </copy>
-        <copy todir="${dist.dir}/xml">
+        <copy todir="${bin.dir}/xml">
             <fileset dir="${basedir}/xml"/>
         </copy>
-        <copy todir="${dist.dir}">
+        <copy todir="${bin.dir}">
             <fileset dir="${src.dir}">
                 <include name="*.bat"/>
+                <include name="*.sh"/>
             </fileset>
         </copy>
+        <chmod perm="u+x" file="${bin.dir}/logView.sh"/>
+
+        <signjar keystore="${basedir}/jws/logView.keystore" alias="logView" storepass="logView" lazy="true">
+            <fileset dir="${bin.dir}/lib" includes="**/*.jar" />
+        </signjar>
     </target>
 
     <target name="rebuild" description="rebuild all" depends="clean,build"/>
+
+    <target name="dist" description="create distributive" depends="rebuild">
+        <mkdir dir="${dist.dir}"/>
+        <delete file="${dist.dir}/logView$-${version}.${revision}.zip" failonerror="false"/>
+        <zip destfile="${dist.dir}/logView-${version}.${revision}.zip">
+            <zipfileset dir="${bin.dir}" prefix="logView-${version}">
+                <exclude name="log"/>
+            </zipfileset>
+        </zip>
+    </target>
 
 </project>
